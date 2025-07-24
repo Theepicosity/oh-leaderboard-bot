@@ -95,7 +95,7 @@ class leaderboard_client(discord.Client):
             
                     video_link = f"https://openhexagon.fun:8001/get_video/{score["replay_hash"]}"
                     
-                    await channel.send(f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **[{run_length}](<{video_link}>)**")
+                    await channel.send(f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **[{run_length}]({video_link})**")
 
     def create_lookup_table(self):
         all_packs = requests.get("https://openhexagon.fun:8001/get_packs/1/1000")
