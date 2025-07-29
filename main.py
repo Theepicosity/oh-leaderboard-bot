@@ -9,10 +9,6 @@ from discord.ext import tasks
 REFRESH_TIME = 60 # seconds
 LB_CHANNEL_ID = 913896034579673138
 
-# todo list:
-# video in scores
-# 'x seconds better than previous record'
-
 def log(str):
     ms = time.time() - math.floor(time.time())
     ms = ("%.3f" % ms).lstrip('0')
@@ -33,7 +29,7 @@ class leaderboard_client(discord.Client):
         self.check_recent_scores_task.start()
         log(f"Started background task for leaderboard checking.")
 
-    @tasks.loop(seconds=REFRESH_TIME)  # task runs every X seconds
+    @tasks.loop(seconds=REFRESH_TIME)  # task runs every REFRESH_TIME seconds
     async def check_recent_scores_task(self):
         current_time = time.time()
 
@@ -60,8 +56,6 @@ class leaderboard_client(discord.Client):
         await self.wait_until_ready()  # wait until the bot logs in
 
     async def send_wrs(self, scores_json):
-        channel = self.get_channel(LB_CHANNEL_ID)
-
         for score in scores_json:
             rank = score["position"]
 
@@ -78,7 +72,7 @@ class leaderboard_client(discord.Client):
                     num_lb_scores = len(lb_scores)
                 except:
                     log(f"WARNING: Could not get leaderboard for https://openhexagon.fun:8001/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}.")
-                    num_lb_scores = 5
+                    num_lb_scores = 5 # arbitrary number greater than 3
 
                 if num_lb_scores >= 3:
                     pack_name = self.pack_lookup[pack_ID]["pack_name"]
@@ -95,6 +89,7 @@ class leaderboard_client(discord.Client):
             
                     video_link = f"https://openhexagon.fun:8001/get_video/{score["replay_hash"]}"
                     
+                    channel = self.get_channel(LB_CHANNEL_ID)
                     await channel.send(f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **[{run_length}]({video_link})**")
 
     def create_lookup_table(self):
