@@ -89,6 +89,9 @@ class leaderboard_client(discord.Client):
             
                     video_link = f"https://openhexagon.fun:8001/get_video/{score["replay_hash"]}"
                     
+                    if pack_name[0] == "#":
+                        pack_name = "\\" + pack_name
+
                     channel = self.get_channel(LB_CHANNEL_ID)
                     await channel.send(f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **[{run_length}]({video_link}) **")
 
