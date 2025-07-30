@@ -12,7 +12,8 @@ LB_CHANNEL_ID = 913896034579673138
 def log(str):
     ms = time.time() - math.floor(time.time())
     ms = ("%.3f" % ms).lstrip('0')
-    print(f"OH-Leaderboard-Bot ({time.strftime("%Y-%m-%d %H:%M:%S")}{ms}): " + str)
+    time_str = time.strftime("%Y-%m-%d %H:%M:%S")
+    print(f"OH-Leaderboard-Bot ({time_str}{ms}): " + str)
 
 class leaderboard_client(discord.Client):
     def __init__(self, *args, **kwargs):
@@ -87,7 +88,7 @@ class leaderboard_client(discord.Client):
                     player = score["user_name"]
                     run_length = round(score["value"], 3)
             
-                    video_link = f"https://openhexagon.fun:8001/get_video/{score["replay_hash"]}"
+                    video_link = "https://openhexagon.fun:8001/get_video/" + score["replay_hash"]
                     
                     if pack_name[0] == "#":
                         pack_name = "\\" + pack_name
