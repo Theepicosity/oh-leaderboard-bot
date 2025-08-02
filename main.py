@@ -114,11 +114,12 @@ class leaderboard_client(discord.Client):
                     queue.pop(0)
                     return
             # check if video exists
-            video_link = "{LB_API_SERVER}/get_video/" + score["replay_hash"]
+            replay_hash = score["replay_hash"]
+            video_link = f"{LB_API_SERVER}/get_video/{replay_hash}"
             try:
                 response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}, timeout=5).headers
-            except:
-                log("Error trying to check if video exists.")
+            except Exception as e:
+                log(f"Error trying to check if video exists: {e}.")
                 return
             if response_headers["Content-Type"] == "video/mp4":
                 # exists now, edit message to include link
