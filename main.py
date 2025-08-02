@@ -10,11 +10,11 @@ REFRESH_TIME = 60 # seconds
 LB_CHANNEL_ID = 913896034579673138
 LB_API_SERVER = "https://openhexagon.fun:8001"
 
-def log(str):
+def log(s : str):
     ms = time.time() - math.floor(time.time())
-    ms = ("%.3f" % ms).lstrip('0')
+    ms_f = ("%.3f" % ms).lstrip('0')
     time_str = time.strftime("%Y-%m-%d %H:%M:%S")
-    print(f"OH-Leaderboard-Bot ({time_str}{ms}): " + str)
+    print(f"OH-Leaderboard-Bot ({time_str}{ms_f}): " + s)
 
 class leaderboard_client(discord.Client):
     def __init__(self, *args, **kwargs):
