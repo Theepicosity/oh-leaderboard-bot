@@ -7,7 +7,7 @@ import discord
 from discord.ext import tasks
 
 REFRESH_TIME = 60 # seconds
-LB_CHANNEL_ID = 913896034579673138
+LB_CHANNEL_ID = 412356109018595329
 LB_API_SERVER = "https://openhexagon.fun:8001"
 
 def log(str):
@@ -116,7 +116,7 @@ class leaderboard_client(discord.Client):
             # check if video exists
             video_link = f"{LB_API_SERVER}/get_video/{score["replay_hash"]}"
             try:
-                response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}).headers
+                response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}, timeout=5).headers
             except:
                 log("Error trying to check if video exists.")
                 return
