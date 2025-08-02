@@ -8,6 +8,7 @@ from discord.ext import tasks
 
 REFRESH_TIME = 60 # seconds
 LB_CHANNEL_ID = 913896034579673138
+LB_API_SERVER = "https://openhexagon.fun:8001"
 
 def log(str):
     ms = time.time() - math.floor(time.time())
@@ -46,7 +47,7 @@ class leaderboard_client(discord.Client):
         saved_state["last_call_timestamp"] = current_time
 
         log(f"Requesting scores from the past {time_difference} seconds.")
-        recent_scores = requests.get(f'https://openhexagon.fun:8001/get_newest_scores/{time_difference}')
+        recent_scores = requests.get(f'{LB_API_SERVER}/get_newest_scores/{time_difference}')
 
         scores_json = recent_scores.json()
         log(f"{len(scores_json)} scores found.")
@@ -70,10 +71,10 @@ class leaderboard_client(discord.Client):
                 level_options_str = urllib.parse.quote(json.dumps(score["level_options"]))
 
                 try:
-                    lb_scores = requests.get(f"https://openhexagon.fun:8001/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}").json()
+                    lb_scores = requests.get(f"{LB_API_SERVER}/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}").json()
                     num_lb_scores = len(lb_scores)
                 except:
-                    log(f"WARNING: Could not get leaderboard for https://openhexagon.fun:8001/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}.")
+                    log(f"WARNING: Could not get leaderboard for {LB_API_SERVER}/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}.")
                     num_lb_scores = 5 # arbitrary number greater than 3
 
                 if num_lb_scores >= 3:
@@ -113,7 +114,7 @@ class leaderboard_client(discord.Client):
                     queue.pop(0)
                     return
             # check if video exists
-            video_link = "https://openhexagon.fun:8001/get_video/" + score["replay_hash"]
+            video_link = f"{LB_API_SERVER}/get_video/{score["replay_hash"]}"
             try:
                 response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}).headers
             except:
@@ -133,7 +134,7 @@ class leaderboard_client(discord.Client):
         await self.wait_until_ready()  # wait until the bot logs in
 
     def create_lookup_table(self):
-        all_packs = requests.get("https://openhexagon.fun:8001/get_packs/1/1000")
+        all_packs = requests.get(f"{LB_API_SERVER}/get_packs/1/1000")
 
         # pack_lookup: dict of dicts
         # {
