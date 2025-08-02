@@ -119,7 +119,7 @@ class leaderboard_client(discord.Client):
             replay_hash = score["replay_hash"]
             video_link = f"{LB_API_SERVER}/get_video/{replay_hash}"
             try:
-                response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}, timeout=5).headers
+                response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}).headers
             except Exception as e:
                 log(f"Error trying to check if video exists: {e}.")
                 return
@@ -131,6 +131,8 @@ class leaderboard_client(discord.Client):
                 log(f"Editing '{message.content}' to '{new_content}'")
                 await message.edit(content=new_content)
                 queue.pop(0)
+            else:
+                return
 
     @check_scores_task.before_loop # type: ignore
     async def before_my_task(self):
