@@ -114,7 +114,7 @@ class leaderboard_client(discord.Client):
                     queue.pop(0)
                     return
             # check if video exists
-            video_link = f"{LB_API_SERVER}/get_video/{score["replay_hash"]}"
+            video_link = "{LB_API_SERVER}/get_video/" + score["replay_hash"]
             try:
                 response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}, timeout=5).headers
             except:
