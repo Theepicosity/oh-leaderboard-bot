@@ -27,36 +27,37 @@ class leaderboard_client(discord.Client):
         self.create_lookup_table()
 
         # start the task to run in the background
-        self.check_recent_scores_task.start()
+        self.check_scores_task.start()
         log(f"Started background task for leaderboard checking.")
 
     @tasks.loop(seconds=REFRESH_TIME)  # task runs every REFRESH_TIME seconds
-    async def check_recent_scores_task(self):
-        current_time = time.time()
-
+    async def check_scores_task(self):
+        saved_state = {}
         try:
-            with open("last_call_timestamp.txt", "r") as timestamp_file:
-                previous_time = float(timestamp_file.read())
-                time_difference = round(current_time - previous_time) 
-        except:
-            log("WARNING: No timestamp file detected -- scores are likely missed.")
-            time_difference = 60
+            with open("saved_state.json") as fp:
+                saved_state = json.load(fp)
+        except FileNotFoundError:
+            pass  # just uses defaults
+        saved_state["video_queue"] = saved_state.get("video_queue", [])
+        saved_state["last_call_timestamp"] = saved_state.get("last_call_timestamp", 0)
+
+        current_time = time.time()
+        time_difference = math.ceil(current_time - saved_state["last_call_timestamp"])
+        saved_state["last_call_timestamp"] = current_time
 
         log(f"Requesting scores from the past {time_difference} seconds.")
         recent_scores = requests.get(f'https://openhexagon.fun:8001/get_newest_scores/{time_difference}')
 
         scores_json = recent_scores.json()
         log(f"{len(scores_json)} scores found.")
-        await self.send_wrs(scores_json)
-        
-        with open("last_call_timestamp.txt", "w") as timestamp_file:
-            timestamp_file.write(str(current_time))
-        
-    @check_recent_scores_task.before_loop
-    async def before_my_task(self):
-        await self.wait_until_ready()  # wait until the bot logs in
+        await self.send_wrs(scores_json, saved_state)
+        await self.check_videos(saved_state["video_queue"])
+        with open("saved_state.json", "w") as fp:
+            json.dump(saved_state, fp)
+        log("Done.")
 
-    async def send_wrs(self, scores_json):
+    async def send_wrs(self, scores_json, saved_state):
+        channel = self.get_channel(LB_CHANNEL_ID)
         for score in scores_json:
             rank = score["position"]
 
@@ -87,14 +88,45 @@ class leaderboard_client(discord.Client):
 
                     player = score["user_name"]
                     run_length = round(score["value"], 3)
-            
-                    video_link = "https://openhexagon.fun:8001/get_video/" + score["replay_hash"]
-                    
+
                     if pack_name[0] == "#":
                         pack_name = "\\" + pack_name
 
-                    channel = self.get_channel(LB_CHANNEL_ID)
-                    await channel.send(f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **[{run_length}]({video_link}) **")
+                    msg = await channel.send(f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **{run_length}**")
+                    saved_state["video_queue"].append({**score, "message_id": msg.id})
+
+    async def check_videos(self, queue):
+        channel = self.get_channel(LB_CHANNEL_ID)
+        log(f"Checking {len(queue)} queued messages for video progress.")
+        while len(queue) > 0:
+            score = queue[0]
+            has_better = False
+            for i in range(1, len(queue)):
+                later_score = queue[i]
+                # python does not compare dicts by reference but by contents, so yes the level_options part is fine
+                if score["pack"] == later_score["pack"] and \
+                        score["level"] == later_score["level"] and \
+                        score["level_options"] == later_score["level_options"] and \
+                        score["position"] == 1 and later_score["position"] == 1:
+                    # there is a newer #1 score on the same level by the same player
+                    # so this one will not be receiving a video
+                    queue.pop(0)
+                    return
+            # check if video exists
+            video_link = "https://openhexagon.fun:8001/get_video/" + score["replay_hash"]
+            response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}).headers
+            if response_headers["Content-Type"] == "video/mp4":
+                # exists now, edit message to include link
+                message = await channel.fetch_message(score["message_id"])
+                run_length = round(score["value"], 3)
+                new_content = message.content.replace(f"**{run_length}**", f"**[{run_length}]({video_link}) **")
+                log(f"Editing '{message.content}' to '{new_content}'")
+                await message.edit(content=new_content)
+                queue.pop(0)
+
+    @check_scores_task.before_loop
+    async def before_my_task(self):
+        await self.wait_until_ready()  # wait until the bot logs in
 
     def create_lookup_table(self):
         all_packs = requests.get("https://openhexagon.fun:8001/get_packs/1/1000")
