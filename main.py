@@ -114,7 +114,11 @@ class leaderboard_client(discord.Client):
                     return
             # check if video exists
             video_link = "https://openhexagon.fun:8001/get_video/" + score["replay_hash"]
-            response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}).headers
+            try:
+                response_headers = requests.get(video_link, headers={"Range": "bytes=0-0"}).headers
+            except:
+                log("Error trying to check if video exists.")
+                continue
             if response_headers["Content-Type"] == "video/mp4":
                 # exists now, edit message to include link
                 message = await channel.fetch_message(score["message_id"])
