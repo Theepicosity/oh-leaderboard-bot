@@ -21,6 +21,7 @@ class leaderboard_client(discord.Client):
         super().__init__(*args, **kwargs)
 
     async def on_ready(self):
+        assert isinstance(self.user, discord.ClientUser)
         log(f"Logged in as {self.user} (ID: {self.user.id})")
 
     async def setup_hook(self) -> None:
@@ -58,7 +59,7 @@ class leaderboard_client(discord.Client):
         log("Done.")
 
     async def send_wrs(self, scores_json, saved_state):
-        channel = self.get_channel(LB_CHANNEL_ID)
+        channel = self.get_output_channel()
         for score in scores_json:
             rank = score["position"]
 
@@ -97,7 +98,7 @@ class leaderboard_client(discord.Client):
                     saved_state["video_queue"].append({**score, "message_id": msg.id})
 
     async def check_videos(self, queue):
-        channel = self.get_channel(LB_CHANNEL_ID)
+        channel = self.get_output_channel()
         log(f"Checking {len(queue)} queued messages for video progress.")
         while len(queue) > 0:
             score = queue[0]
@@ -129,9 +130,17 @@ class leaderboard_client(discord.Client):
                 await message.edit(content=new_content)
                 queue.pop(0)
 
-    @check_scores_task.before_loop
+    @check_scores_task.before_loop # type: ignore
     async def before_my_task(self):
         await self.wait_until_ready()  # wait until the bot logs in
+    
+    def get_output_channel(self):
+        channel = self.get_channel(LB_CHANNEL_ID)
+        if not channel:
+            log(f"ERROR: Could not find channel <{LB_CHANNEL_ID}>.")
+            return
+        assert isinstance(channel, discord.TextChannel), "You have set your output to a channel that isn't a text channel."
+        return channel
 
     def create_lookup_table(self):
         all_packs = requests.get(f"{LB_API_SERVER}/get_packs/1/1000")
