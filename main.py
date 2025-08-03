@@ -10,17 +10,18 @@ REFRESH_TIME = 60 # seconds
 LB_CHANNEL_ID = 412356109018595329
 LB_API_SERVER = "https://openhexagon.fun:8001"
 
-def log(str):
+def log(s : str):
     ms = time.time() - math.floor(time.time())
-    ms = ("%.3f" % ms).lstrip('0')
+    ms_f = ("%.3f" % ms).lstrip('0')
     time_str = time.strftime("%Y-%m-%d %H:%M:%S")
-    print(f"OH-Leaderboard-Bot ({time_str}{ms}): " + str)
+    print(f"OH-Leaderboard-Bot ({time_str}{ms_f}): " + s)
 
 class leaderboard_client(discord.Client):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
     async def on_ready(self):
+        assert isinstance(self.user, discord.ClientUser)
         log(f"Logged in as {self.user} (ID: {self.user.id})")
 
     async def setup_hook(self) -> None:
@@ -58,7 +59,7 @@ class leaderboard_client(discord.Client):
         log("Done.")
 
     async def send_wrs(self, scores_json, saved_state):
-        channel = self.get_channel(LB_CHANNEL_ID)
+        channel = self.get_output_channel()
         for score in scores_json:
             rank = score["position"]
 
@@ -97,7 +98,7 @@ class leaderboard_client(discord.Client):
                     saved_state["video_queue"].append({**score, "message_id": msg.id})
 
     async def check_videos(self, queue):
-        channel = self.get_channel(LB_CHANNEL_ID)
+        channel = self.get_output_channel()
         log(f"Checking {len(queue)} queued messages for video progress.")
         while len(queue) > 0:
             score = queue[0]
@@ -130,9 +131,17 @@ class leaderboard_client(discord.Client):
                 await message.edit(content=new_content)
                 queue.pop(0)
 
-    @check_scores_task.before_loop
+    @check_scores_task.before_loop # type: ignore
     async def before_my_task(self):
         await self.wait_until_ready()  # wait until the bot logs in
+    
+    def get_output_channel(self):
+        channel = self.get_channel(LB_CHANNEL_ID)
+        if not channel:
+            log(f"ERROR: Could not find channel <{LB_CHANNEL_ID}>.")
+            return
+        assert isinstance(channel, discord.TextChannel), "You have set your output to a channel that isn't a text channel."
+        return channel
 
     def create_lookup_table(self):
         all_packs = requests.get(f"{LB_API_SERVER}/get_packs/1/1000")
