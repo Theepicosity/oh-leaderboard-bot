@@ -7,6 +7,7 @@ import discord
 from discord.ext import tasks
 
 REFRESH_TIME = 60 # seconds
+SCORES_THRESHOLD = 3
 LB_CHANNEL_ID = 412356109018595329
 LB_API_SERVER = "https://openhexagon.fun:8001"
 
@@ -76,9 +77,9 @@ class leaderboard_client(discord.Client):
                     num_lb_scores = len(lb_scores)
                 except:
                     log(f"WARNING: Could not get leaderboard for {LB_API_SERVER}/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}.")
-                    num_lb_scores = 5 # arbitrary number greater than 3
+                    num_lb_scores = SCORES_THRESHOLD + 2
 
-                if num_lb_scores >= 3:
+                if num_lb_scores >= SCORES_THRESHOLD:
                     pack_name = self.pack_lookup[pack_ID]["pack_name"]
                     level_name = self.pack_lookup[pack_ID]["levels"][level_ID][0]
                     num_diffs = self.pack_lookup[pack_ID]["levels"][level_ID][1]
