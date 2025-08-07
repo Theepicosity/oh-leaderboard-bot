@@ -7,7 +7,7 @@ import discord
 from discord.ext import tasks
 
 REFRESH_TIME = 60 # seconds
-SCORES_THRESHOLD = 3
+SCORES_THRESHOLD = 4
 LB_CHANNEL_ID = 412356109018595329
 LB_API_SERVER = "https://openhexagon.fun:8001"
 
