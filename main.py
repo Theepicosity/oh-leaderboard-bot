@@ -77,16 +77,30 @@ class leaderboard_client(discord.Client):
                     num_lb_scores = len(lb_scores)
                 except:
                     log(f"WARNING: Could not get leaderboard for {LB_API_SERVER}/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}.")
-                    num_lb_scores = SCORES_THRESHOLD + 2
+                    num_lb_scores = SCORES_THRESHOLD # allow score
 
                 if num_lb_scores >= SCORES_THRESHOLD:
-                    pack_name = self.pack_lookup[pack_ID]["pack_name"]
-                    level_name = self.pack_lookup[pack_ID]["levels"][level_ID][0]
+                    try:
+                        pack_name = self.pack_lookup[pack_ID]["pack_name"]
+                        level_name = self.pack_lookup[pack_ID]["levels"][level_ID][0]
+                    except KeyError:
+                        # new levels were added to the server, must refresh cache
+                        self.create_lookup_table()
+
+                        pack_name = self.pack_lookup[pack_ID]["pack_name"]
+                        level_name = self.pack_lookup[pack_ID]["levels"][level_ID][0]
+
                     num_diffs = self.pack_lookup[pack_ID]["levels"][level_ID][1]
 
-                    mult = round(score["level_options"]["difficulty_mult"], 5)
+                    mult = round(score["level_options"]["difficulty_mult"], 7) # supports diffs with 7 decimal places (most i've seen on workshop is 4)
+
                     diff_str = ""
                     if num_diffs > 1:
+                        diff_str = f" [x{mult}]"
+                    # if level has only 1 difficulty, but score wasn't set on x1, something is wrong
+                    elif mult != 1.0:
+                        log(f"WARNING: Level {level_ID} may have added difficulty mults, refreshing  cache.")
+                        self.create_lookup_table()
                         diff_str = f" [x{mult}]"
 
                     player = score["user_name"]
@@ -111,7 +125,7 @@ class leaderboard_client(discord.Client):
                         score["level"] == later_score["level"] and \
                         score["level_options"] == later_score["level_options"] and \
                         score["position"] == 1 and later_score["position"] == 1:
-                    # there is a newer #1 score on the same level by the same player
+                    # there is a newer #1 score on the same level
                     # so this one will not be receiving a video
                     queue.pop(0)
                     return
