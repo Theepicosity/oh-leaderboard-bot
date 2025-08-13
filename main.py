@@ -1,3 +1,4 @@
+import re
 import math
 import time
 import json
@@ -8,8 +9,12 @@ from discord.ext import tasks
 
 REFRESH_TIME = 60 # seconds
 SCORES_THRESHOLD = 4
+EDIT_TIME = 900 # improvements within 15 minutes of each other result in an edited message instead of a new one, to reduce spam
 LB_CHANNEL_ID = 412356109018595329
 LB_API_SERVER = "https://openhexagon.fun:8001"
+
+def rreplace(s, old, new):
+    return new.join(s.rsplit(old, 1))
 
 def log(s : str):
     ms = time.time() - math.floor(time.time())
@@ -43,7 +48,7 @@ class leaderboard_client(discord.Client):
             pass  # just uses defaults
         saved_state["video_queue"] = saved_state.get("video_queue", [])
         saved_state["last_call_timestamp"] = saved_state.get("last_call_timestamp", 0)
-        saved_state["last_score"] = saved_state.get("last_score", {})
+        saved_state["recent_scores"] = saved_state.get("recent_scores", [])
 
         current_time = time.time()
         time_difference = math.ceil(current_time - saved_state["last_call_timestamp"])
@@ -112,24 +117,40 @@ class leaderboard_client(discord.Client):
 
                     score_text = f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **{run_length}**"
 
-                    last_score = saved_state["last_score"]
+                    # remove old messages from the edit queue
+                    for last_score in saved_state["recent_scores"]:
+                        if score["timestamp"] - last_score["timestamp"] > EDIT_TIME:
+                            saved_state["recent_scores"].remove(last_score)
 
-                    if score["pack"] == last_score.get("pack", "") and \
-                        score["level"] == last_score["level"] and \
-                        score["level_options"] == last_score["level_options"] and \
-                        score["user_name"] == last_score["user_name"]:
+                    edited = False
+                    # check if score could be edited into a previous message 
+                    for last_score in saved_state["recent_scores"]:
+                        if score["pack"] == last_score.get("pack", "") and \
+                            score["level"] == last_score["level"] and \
+                            score["level_options"] == last_score["level_options"]:
+                            
+                            # if two people are competing on the same level in the same 15 minutes, do not edit
+                            if score["user_name"] != last_score["user_name"] and score["value"] > last_score["value"]:
+                                saved_state["recent_scores"].remove(last_score)
+                                break
 
-                        msg = await channel.fetch_message(last_score["message_id"])
+                            msg = await channel.fetch_message(last_score["message_id"])
 
-                        new_content = msg.content + "\n" + score_text
+                            new_content = msg.content + "\n" + score_text
 
-                        log(f"Editing '{msg.content}' to '{new_content}'")
-                        await msg.edit(content=new_content)
-                    else:
-                        msg = await channel.send(score_text)
+                            log(f"Appending '{score_text}' to message {msg.id}")
+                            await msg.edit(content=new_content)
+
+                            edited = True
+                            break
                     
-                    saved_state["video_queue"].append({**score, "message_id": msg.id})
-                    saved_state["last_score"] = {**score, "message_id": msg.id}
+                    if not edited:
+                        # send new message
+                        msg = await channel.send(score_text)
+                        saved_state["recent_scores"].append({**score, "message_id": msg.id})
+                    
+                    if rank == 1:
+                        saved_state["video_queue"].append({**score, "message_id": msg.id})
 
     async def check_videos(self, queue):
         channel = self.get_output_channel()
@@ -160,7 +181,12 @@ class leaderboard_client(discord.Client):
                 # exists now, edit message to include link
                 message = await channel.fetch_message(score["message_id"])
                 run_length = round(score["value"], 3)
-                new_content = message.content.replace(f"**{run_length}**", f"**[{run_length}]({video_link}) **")
+
+                # remove previous links
+                new_content = re.sub("\\[(.+)\\]\\(.+\\)", "\\1", message.content)
+                # add newest link
+                new_content = rreplace(new_content, f"**{run_length}**", f"**[{run_length}]({video_link}) **")
+
                 log(f"Editing '{message.content}' to '{new_content}'")
                 await message.edit(content=new_content)
                 queue.pop(0)
