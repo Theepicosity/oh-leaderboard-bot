@@ -43,6 +43,7 @@ class leaderboard_client(discord.Client):
             pass  # just uses defaults
         saved_state["video_queue"] = saved_state.get("video_queue", [])
         saved_state["last_call_timestamp"] = saved_state.get("last_call_timestamp", 0)
+        saved_state["last_score"] = saved_state.get("last_score", {})
 
         current_time = time.time()
         time_difference = math.ceil(current_time - saved_state["last_call_timestamp"])
@@ -109,8 +110,26 @@ class leaderboard_client(discord.Client):
                     if pack_name[0] == "#":
                         pack_name = "\\" + pack_name
 
-                    msg = await channel.send(f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **{run_length}**")
+                    score_text = f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1388672832094867486> **{player}** achieved **#{rank}** with a score of **{run_length}**"
+
+                    last_score = saved_state["last_score"]
+
+                    if score["pack"] == last_score.get("pack", "") and \
+                        score["level"] == last_score["level"] and \
+                        score["level_options"] == last_score["level_options"] and \
+                        score["user_name"] == last_score["user_name"]:
+
+                        msg = await channel.fetch_message(last_score["message_id"])
+
+                        new_content = msg.content + "\n" + score_text
+
+                        log(f"Editing '{msg.content}' to '{new_content}'")
+                        await msg.edit(content=new_content)
+                    else:
+                        msg = await channel.send(score_text)
+                    
                     saved_state["video_queue"].append({**score, "message_id": msg.id})
+                    saved_state["last_score"] = {**score, "message_id": msg.id}
 
     async def check_videos(self, queue):
         channel = self.get_output_channel()
