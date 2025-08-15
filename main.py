@@ -98,13 +98,13 @@ class leaderboard_client(discord.Client):
 
                     num_diffs = self.pack_lookup[pack_ID]["levels"][level_ID][1]
 
-                    mult = round(score["level_options"]["difficulty_mult"], 7) # supports diffs with 7 decimal places (most i've seen on workshop is 4)
+                    mult = f"{score['level_options']['difficulty_mult']:.6g}"
 
                     diff_str = ""
                     if num_diffs > 1:
                         diff_str = f" [x{mult}]"
                     # if level has only 1 difficulty, but score wasn't set on x1, something is wrong
-                    elif mult != 1.0:
+                    elif mult != "1":
                         log(f"WARNING: Level {level_ID} may have added difficulty mults, refreshing  cache.")
                         self.create_lookup_table()
                         diff_str = f" [x{mult}]"
