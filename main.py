@@ -183,7 +183,7 @@ class leaderboard_client(discord.Client):
                 run_length = round(score["value"], 3)
 
                 # remove previous links
-                new_content = re.sub("\\[(.+)\\]\\(.+\\)", "\\1", message.content)
+                new_content = re.sub(r"\[(\d+(\.\d*)?)\]\(.+\)", r"\1", message.content)
                 # add newest link
                 new_content = rreplace(new_content, f"**{run_length}**", f"**[{run_length}]({video_link}) **")
 
