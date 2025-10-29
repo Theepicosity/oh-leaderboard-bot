@@ -12,8 +12,8 @@ from discord.ext import tasks
 REFRESH_TIME = 60 # seconds
 SCORES_THRESHOLD = 4
 EDIT_TIME = 900 # improvements within 15 minutes of each other result in an edited message instead of a new one, to reduce spam
-LB_CHANNEL_ID = 811782756996087858
-GUILD_ID = 435308083036553217 # used for guild-specific commands
+GUILD_ID = 435308083036553217 # [435308083036553217, 410600026679541783, 1432186372222877871] # hardcoded guilds, used when syncing locally rather than globally
+SYNC_GLOBALLY = False
 LB_API_SERVER = "https://openhexagon.fun:8001"
 
 def rreplace(s, old, new):
@@ -33,8 +33,7 @@ class leaderboard_client(discord.Client):
         tree = app_commands.CommandTree(self)
         guild = discord.Object(id=GUILD_ID)
 
-        # TODO: allow not hardcoded guild id (probably with some kind of init message) maybe the open hexagon guild and channel can be hardcoded, or a default in saved_state.json
-        # global recent command
+        # guild or None
 
         @tree.command(name="subscribe", description="Subscribes this channel to leaderboard updates", guild=guild)
         async def guild_subscribe(interaction: discord.Interaction):
@@ -43,7 +42,7 @@ class leaderboard_client(discord.Client):
                 await self.update_subscribed_channels(dict(channel_id=interaction.channel.id, guild_id=interaction.guild.id), False)
                 await interaction.response.send_message("This channel has subscribed to leaderboard updates.")
             else:
-                await interaction.response.send_message("You do not have permissions to run this command.", ephemeral=True)
+                await interaction.response.send_message("You do not have permission to run this command.", ephemeral=True)
 
         @tree.command(name="unsubscribe", description="Unsubscribes this channel from leaderboard updates", guild=guild)
         async def guild_unsubscribe(interaction: discord.Interaction):
@@ -51,11 +50,38 @@ class leaderboard_client(discord.Client):
                 await self.update_subscribed_channels(dict(channel_id=interaction.channel.id, guild_id=interaction.guild.id), True)
                 await interaction.response.send_message("This channel has unsubscribed from leaderboard updates.")
             else:
-                await interaction.response.send_message("You do not have permissions to run this command.", ephemeral=True)
+                await interaction.response.send_message("You do not have permission to run this command.", ephemeral=True)
+
+        @tree.command(name="recent", description="Sends the most recent score.", guild=guild)
+        async def guild_recent(interaction: discord.Interaction, player: Optional[str]):
+            # choosing six hours as an arbitrary cutoff point, since i don't want to spam the api
+            # is there an easier way to find the most recent score?
+            log(f"Requesting the most recent score.")
+            recent_scores = requests.get(f'{LB_API_SERVER}/get_newest_scores/21600')
+
+            scores_json = recent_scores.json()
+            log(f"{len(scores_json)} scores found.")
+            saved_state = await self.get_saved_state()
+
+            score_text = await self.send_recent_score(scores_json, saved_state, player)
+            await interaction.response.send_message(score_text)
+
+        @tree.command(name="best", description="Sends the best score from a level.", guild=guild)
+        async def guild_best(interaction: discord.Interaction, pack: str, level: str, difficulty_mult: float):
+            log(f"Requesting the best score for {pack} - {level} {difficulty_mult}x.")
+            recent_scores = requests.get(f'{LB_API_SERVER}/get_newest_scores/21600')
+
+            saved_state = await self.get_saved_state()
+
+            score_text = await self.send_best_score(saved_state, pack, level, difficulty_mult)
+            await interaction.response.send_message(score_text)
+
+        # TODO: command that shows u the top score on a given level
+        # this will require me to know how the leadboard api works... maybe ask baum?
 
         self.tree = tree
 
-    async def update_subscribed_channels(self, new_entry, is_removing_entry):
+    async def get_saved_state(self):
         saved_state = {}
         try:
             with open("saved_state.json") as fp:
@@ -66,6 +92,11 @@ class leaderboard_client(discord.Client):
         saved_state["last_call_timestamp"] = saved_state.get("last_call_timestamp", 0)
         saved_state["recent_scores"] = saved_state.get("recent_scores", [])
         saved_state["subscribed_channels"] = saved_state.get("subscribed_channels", [])
+
+        return saved_state
+
+    async def update_subscribed_channels(self, new_entry, is_removing_entry):
+        saved_state = await self.get_saved_state()
 
         if is_removing_entry:
             # find the right channel id and remove it
@@ -124,6 +155,84 @@ class leaderboard_client(discord.Client):
             json.dump(saved_state, fp)
         log("Done.")
 
+    def get_score_text(self, score):
+        pack_ID = score["pack"]
+        level_ID = score["level"]
+        try:
+            pack_name = self.pack_lookup[pack_ID]["pack_name"]
+            level_name = self.pack_lookup[pack_ID]["levels"][level_ID][0]
+        except KeyError:
+            # new levels were added to the server, must refresh cache
+            self.create_lookup_table()
+
+            pack_name = self.pack_lookup[pack_ID]["pack_name"]
+            level_name = self.pack_lookup[pack_ID]["levels"][level_ID][0]
+
+        num_diffs = self.pack_lookup[pack_ID]["levels"][level_ID][1]
+
+        mult = f"{score['level_options']['difficulty_mult']:.6g}"
+
+        diff_str = ""
+        if num_diffs > 1:
+            diff_str = f" [x{mult}]"
+        # if level has only 1 difficulty, but score wasn't set on x1, something is wrong
+        elif mult != "1":
+            log(f"WARNING: Level {level_ID} may have added difficulty mults, refreshing cache.")
+            self.create_lookup_table()
+            diff_str = f" [x{mult}]"
+
+        player = score["user_name"]
+        run_length = round(score["value"], 3)
+        rank = score["position"]
+
+        if pack_name[0] == "#":
+            pack_name = "\\" + pack_name
+
+        return f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1432891341297418322> **{player}** achieved **#{rank}** with a score of **{run_length}**"
+
+    async def send_recent_score(self, scores_json, saved_state, player_check):
+        # because we are just sending one score, we don't have to check for edits or update the saved state
+        channels = self.get_output_channels(saved_state["subscribed_channels"])
+        for i in range(len(scores_json)):
+            score = scores_json[len(scores_json) - i - 1]
+            player = score["user_name"]
+
+            if player == player_check or player_check == None:
+                score_text = self.get_score_text(score)
+                return score_text
+        return "No recent scores found. (within the last six hours)"
+
+    async def send_best_score(self, saved_state, pack, level, difficulty_mult):
+        channels = self.get_output_channels(saved_state["subscribed_channels"])
+
+        # the order of operations for this is that we need to lookup the pack id, then find the best score, then run get_score_text
+
+        for pack_id, pack_entry in self.pack_lookup.items():
+            if pack_entry["pack_name"].lower() == pack.lower():
+                for level_id, level_entry in pack_entry["levels"].items():
+                    if level_entry[0].lower() == level.lower():
+                        pack_ID = pack_id
+                        level_ID = level_id
+
+        # this is the "finding the best score" part
+        pack_ID_str = urllib.parse.quote(pack_ID)
+        level_ID_str = urllib.parse.quote(level_ID)
+        # bad way of doing this!
+        level_options_str = urllib.parse.quote(f"{{difficulty_mult: {difficulty_mult}}}")
+
+        try:
+            lb_scores = requests.get(f"{LB_API_SERVER}/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}").json()
+        except:
+            log(f"WARNING: Could not get leaderboard for {LB_API_SERVER}/get_leaderboard/{pack_ID_str}/{level_ID_str}/{level_options_str}.")
+            return "Unable to fetch leaderboard. (did you type in the level correctly?)"
+
+        for score in lb_scores:
+            if score["position"] == 1:
+                # running this function here is quite redundant
+                score_text = self.get_score_text(score)
+                return score_text
+        return "This level has no scores."
+
     async def send_wrs(self, scores_json, saved_state):
         # note: the channels are only checked at the start of the loop, meaning that scores could be sent even after running the unsubscribe command
         channels = self.get_output_channels(saved_state["subscribed_channels"])
@@ -146,36 +255,7 @@ class leaderboard_client(discord.Client):
                     num_lb_scores = SCORES_THRESHOLD # allow score
 
                 if num_lb_scores >= SCORES_THRESHOLD:
-                    try:
-                        pack_name = self.pack_lookup[pack_ID]["pack_name"]
-                        level_name = self.pack_lookup[pack_ID]["levels"][level_ID][0]
-                    except KeyError:
-                        # new levels were added to the server, must refresh cache
-                        self.create_lookup_table()
-
-                        pack_name = self.pack_lookup[pack_ID]["pack_name"]
-                        level_name = self.pack_lookup[pack_ID]["levels"][level_ID][0]
-
-                    num_diffs = self.pack_lookup[pack_ID]["levels"][level_ID][1]
-
-                    mult = f"{score['level_options']['difficulty_mult']:.6g}"
-
-                    diff_str = ""
-                    if num_diffs > 1:
-                        diff_str = f" [x{mult}]"
-                    # if level has only 1 difficulty, but score wasn't set on x1, something is wrong
-                    elif mult != "1":
-                        log(f"WARNING: Level {level_ID} may have added difficulty mults, refreshing  cache.")
-                        self.create_lookup_table()
-                        diff_str = f" [x{mult}]"
-
-                    player = score["user_name"]
-                    run_length = round(score["value"], 3)
-
-                    if pack_name[0] == "#":
-                        pack_name = "\\" + pack_name
-
-                    score_text = f"**{pack_name} - {level_name}{diff_str}** <:hexagon:1432891341297418322> **{player}** achieved **#{rank}** with a score of **{run_length}**"
+                    score_text = self.get_score_text(score)
 
                     # remove old messages from the edit queue
                     for last_score in saved_state["recent_scores"]:
@@ -275,7 +355,7 @@ class leaderboard_client(discord.Client):
         for entry in subscribed_channels:
             channel = self.get_channel(entry["channel_id"])
             if not channel:
-                log(f"ERROR: Could not find channel <{LB_CHANNEL_ID}>.")
+                log(f"ERROR: Could not find channel <{entry["channel_id"]}>.")
                 return
             assert isinstance(channel, discord.TextChannel), "You have set your output to a channel that isn't a text channel."
             output_channels.append(channel)
