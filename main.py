@@ -14,6 +14,7 @@ SCORES_THRESHOLD = 4
 EDIT_TIME = 900 # improvements within 15 minutes of each other result in an edited message instead of a new one, to reduce spam
 GUILD_ID = 435308083036553217 # [435308083036553217, 410600026679541783, 1432186372222877871] # hardcoded guilds, used when syncing locally rather than globally
 SYNC_GLOBALLY = False
+SYNC_LOCALLY = False
 LB_API_SERVER = "https://openhexagon.fun:8001"
 
 def rreplace(s, old, new):
@@ -31,11 +32,10 @@ class leaderboard_client(discord.Client):
 
     async def command_tree(self):
         tree = app_commands.CommandTree(self)
-        guild = discord.Object(id=GUILD_ID)
 
         # guild or None
 
-        @tree.command(name="subscribe", description="Subscribes this channel to leaderboard updates", guild=guild)
+        @tree.command(name="subscribe", description="Subscribes this channel to leaderboard updates")
         async def guild_subscribe(interaction: discord.Interaction):
             # i think there's a better way to do the permissions handling but this is quick and easy
             if interaction.permissions.manage_guild == True:
@@ -44,7 +44,7 @@ class leaderboard_client(discord.Client):
             else:
                 await interaction.response.send_message("You do not have permission to run this command.", ephemeral=True)
 
-        @tree.command(name="unsubscribe", description="Unsubscribes this channel from leaderboard updates", guild=guild)
+        @tree.command(name="unsubscribe", description="Unsubscribes this channel from leaderboard updates")
         async def guild_unsubscribe(interaction: discord.Interaction):
             if interaction.permissions.manage_guild == True:
                 await self.update_subscribed_channels(dict(channel_id=interaction.channel.id, guild_id=interaction.guild.id), True)
@@ -52,7 +52,7 @@ class leaderboard_client(discord.Client):
             else:
                 await interaction.response.send_message("You do not have permission to run this command.", ephemeral=True)
 
-        @tree.command(name="recent", description="Sends the most recent score.", guild=guild)
+        @tree.command(name="recent", description="Sends the most recent score.")
         async def guild_recent(interaction: discord.Interaction, player: Optional[str]):
             # choosing six hours as an arbitrary cutoff point, since i don't want to spam the api
             # is there an easier way to find the most recent score?
@@ -66,15 +66,15 @@ class leaderboard_client(discord.Client):
             score_text = await self.send_recent_score(scores_json, saved_state, player)
             await interaction.response.send_message(score_text)
 
-        @tree.command(name="best", description="Sends the best score from a level.", guild=guild)
-        async def guild_best(interaction: discord.Interaction, pack: str, level: str, difficulty_mult: float):
-            log(f"Requesting the best score for {pack} - {level} {difficulty_mult}x.")
-            recent_scores = requests.get(f'{LB_API_SERVER}/get_newest_scores/21600')
-
-            saved_state = await self.get_saved_state()
-
-            score_text = await self.send_best_score(saved_state, pack, level, difficulty_mult)
-            await interaction.response.send_message(score_text)
+        # @tree.command(name="best", description="Sends the best score from a level.")
+        # async def guild_best(interaction: discord.Interaction, pack: str, level: str, difficulty_mult: float):
+        #     log(f"Requesting the best score for {pack} - {level} {difficulty_mult}x.")
+        #     recent_scores = requests.get(f'{LB_API_SERVER}/get_newest_scores/21600')
+        #
+        #     saved_state = await self.get_saved_state()
+        #
+        #     score_text = await self.send_best_score(saved_state, pack, level, difficulty_mult)
+        #     await interaction.response.send_message(score_text)
 
         # TODO: command that shows u the top score on a given level
         # this will require me to know how the leadboard api works... maybe ask baum?
@@ -116,8 +116,12 @@ class leaderboard_client(discord.Client):
 
         # setup command tree
         await self.command_tree()
-        await self.tree.sync(guild=discord.Object(id=GUILD_ID))
-        log(f"Synchronized commands with guild. (GUILD_ID: {GUILD_ID})")
+        if SYNC_GLOBALLY:
+            await self.tree.sync()
+            log(f"Synchronized commands globally.")
+        if SYNC_LOCALLY:
+            await self.tree.sync(guild=discord.Object(id=GUILD_ID))
+            log(f"Synchronized commands with guild. (GUILD_ID: {GUILD_ID})")
 
     async def setup_hook(self) -> None:
         # setup pack and level lookup table
@@ -341,8 +345,8 @@ class leaderboard_client(discord.Client):
 
                             log(f"Editing '{msg.content}' to '{new_content}'")
                             await msg.edit(content=new_content)
-                            queue.pop(0)
-                            break
+                queue.pop(0)
+                break
             else:
                 return
 
